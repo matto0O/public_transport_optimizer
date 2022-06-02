@@ -4,3 +4,4 @@
 4. Get APIs to work
 5. Estimate the latency of the first of vehicles being part of a ride
    (compare ETA from its current position with times in timetable)
+6. Apply Kivy
