@@ -22,36 +22,15 @@ class Line:
         return f"Linia {self.signature}"
 
 
-@dataclass(frozen=True)
-class Departure:
-    line: Line
-    time: datetime.time
-    timetable: int
-    low: bool = False
-
-    def __repr__(self):
-        match self.timetable:
-            case 0:
-                days = 'dni robocze'
-            case 1:
-                days = 'sobota'
-            case _:
-                days = 'święta'
-        result = f"{self.line.__str__()}\n{self.time} - {days}"
-        if self.low:
-            result += ", niskopodłogowy"
-        return result
-
-
 class Stop:
-    def __init__(self, code: str, name: str, latitude: str, longitude: str):
+    def __init__(self, code, name, latitude, longitude):
         self.__code = code
         self.__name = name
         self.__latitude = latitude
         self.__longitude = longitude
         self.departures = list()
 
-    def append_departure(self, departure: Departure):
+    def append_departure(self, departure):
         self.departures.append(departure)
 
     @property
@@ -95,12 +74,62 @@ class Variant:
             result += stop.name + " - "
         return result[:-3]
 
+    def route_str(self, stop):
+        return f"{stop.name} - {self.end.name}"
+
+
+@dataclass(frozen=True)
+class Departure:
+    line: Line
+    variant: Variant
+    d_from: Stop
+    time: datetime.time
+    timetable: int
+    low: bool = False
+
+    def __repr__(self):
+        match self.timetable:
+            case 0:
+                days = 'dni robocze'
+            case 1:
+                days = 'sobota'
+            case _:
+                days = 'święta'
+        result = f"{self.line.__str__()} {self.variant.route_str(self.d_from)}\n{self.time} - {days}"
+        if self.low:
+            result += ", niskopodłogowy"
+        return result
+
+    def __gt__(self, other):
+        if self.timetable == other.timetable:
+            return self.time > other.time
+        return self.timetable > other.timetable
+
+    def __ge__(self, other):
+        if self.timetable == other.timetable:
+            return self.time >= other.time
+        return self.timetable >= other.timetable
+
+    def __le__(self, other):
+        return not self.__gt__(other)
+
+    def __lt__(self, other):
+        return not self.__ge__(other)
+
 
 def find_stop_by_id(code):
     for stop in stops:
         if stop.code == code:
             return stop
     return None
+
+
+def find_stop_by_name(name):
+    result = list()
+    for stop in stops:
+        if stop.name.lower() == name.lower():
+            result.append(stop)
+    return result
 
 
 def find_line_by_signature(signature):
@@ -148,8 +177,9 @@ def fetch_lines():
 def fetch_departures():
     for file in os.listdir("XML-rozkladyjazdy"):
         tree = ET.parse(f"XML-rozkladyjazdy\{file}")
-        line = tree.getroot()
-        for variant in line[0]:
+        root = tree.getroot()
+        for variant in root[0]:
+            variant_id = variant.attrib['id']
             for stop in variant:
                 current_stop = find_stop_by_id(stop.attrib['id'])
                 try:
@@ -168,8 +198,9 @@ def fetch_departures():
                                 low = False
                                 if len(minute.attrib) > 1:
                                     low = minute.attrib['ozn'] == 'N'
-                                d = Departure(find_line_by_signature(line[0].attrib['nazwa']),
-                                            datetime.time(int(h % 24), int(m % 60)), timetable, low)
+                                line = find_line_by_signature(root[0].attrib['nazwa'])
+                                d = Departure(line, line.variants[int(variant_id)], current_stop,
+                                              datetime.time(int(h) % 24, int(m) % 60), timetable, low)
                                 # TODO consider departures post-midnight
                                 current_stop.append_departure(d)
                 except IndexError:
