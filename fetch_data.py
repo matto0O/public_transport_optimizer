@@ -5,9 +5,13 @@ import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 import datetime
+import sqlite3
 
-stops = list()
 lines = list()
+db = sqlite3.connect("pto.db")
+db.execute("PRAGMA foreign_keys = ON")
+cursor = db.cursor()
+start = datetime.datetime.now()
 
 
 @dataclass(frozen=True)
@@ -20,116 +24,6 @@ class Line:
 
     def __str__(self):
         return f"Linia {self.signature}"
-
-
-class Stop:
-    def __init__(self, code, name, latitude, longitude):
-        self.__code = code
-        self.__name = name
-        self.__latitude = latitude
-        self.__longitude = longitude
-        self.departures = list()
-
-    def append_departure(self, departure):
-        self.departures.append(departure)
-
-    @property
-    def code(self):
-        return self.__code
-
-    @property
-    def name(self):
-        return self.__name
-
-    @property
-    def latitude(self):
-        return self.__latitude
-
-    @property
-    def longitude(self):
-        return self.__longitude
-
-    def __eq__(self, other):
-        if other.__class__ is self.__class__:
-            return self.__code == other.__code
-        else:
-            return NotImplementedError
-
-    def __hash__(self):
-        return hash(self.__code)
-
-    def __repr__(self):
-        return "{} - {} - {}, {}".format(self.code, self.name, self.latitude, self.longitude)
-
-
-@dataclass(frozen=True)
-class Variant:
-    start: Stop
-    end: Stop
-    intervals: dict
-
-    def __repr__(self):
-        result = "{} - {}\n".format(self.start.name, self.end.name)
-        for stop in self.intervals.keys():
-            result += stop.name + " - "
-        return result[:-3]
-
-    def route_str(self, stop):
-        return f"{stop.name} - {self.end.name}"
-
-
-@dataclass(frozen=True)
-class Departure:
-    line: Line
-    variant: Variant
-    d_from: Stop
-    time: datetime.time
-    timetable: int
-    low: bool = False
-
-    def __repr__(self):
-        match self.timetable:
-            case 0:
-                days = 'dni robocze'
-            case 1:
-                days = 'sobota'
-            case _:
-                days = 'święta'
-        result = f"{self.line.__str__()} {self.variant.route_str(self.d_from)}\n{self.time} - {days}"
-        if self.low:
-            result += ", niskopodłogowy"
-        return result
-
-    def __gt__(self, other):
-        if self.timetable == other.timetable:
-            return self.time > other.time
-        return self.timetable > other.timetable
-
-    def __ge__(self, other):
-        if self.timetable == other.timetable:
-            return self.time >= other.time
-        return self.timetable >= other.timetable
-
-    def __le__(self, other):
-        return not self.__gt__(other)
-
-    def __lt__(self, other):
-        return not self.__ge__(other)
-
-
-def find_stop_by_id(code):
-    for stop in stops:
-        if stop.code == code:
-            return stop
-    return None
-
-
-def find_stop_by_name(name):
-    result = list()
-    for stop in stops:
-        if stop.name.lower() == name.lower():
-            result.append(stop)
-    return result
 
 
 def find_line_by_signature(signature):
@@ -157,7 +51,8 @@ def unpack_timetable():
 def fetch_stops():
     file = pd.read_csv("stops.txt", dtype=str)
     for elem in file.iterrows():
-        stops.append(Stop(elem[1][1], elem[1][2], elem[1][3], elem[1][4]))
+        cursor.execute("INSERT INTO stops (code, stop_name, latitude, longitude) VALUES (?,?,?,?)",
+                       (elem[1][1], elem[1][2], elem[1][3], elem[1][4]))
 
 
 def fetch_lines():
@@ -168,47 +63,75 @@ def fetch_lines():
         for child in root[0]:
             intervals = dict()
             for times in child[0][0]:
-                intervals[find_stop_by_id(times.attrib['id'])] = times.attrib['czas']
-            stops_helper = list(intervals.keys())
-            variants.append(Variant(stops_helper[0], stops_helper[-1], intervals))
+                intervals[times.attrib['id']] = int(times.attrib['czas'])
+            variants.append(intervals)
         lines.append(Line(root[0].attrib['nazwa'], variants))
+        cursor.execute("INSERT INTO lines (signature) VALUES (?)", (root[0].attrib['nazwa'],))
 
 
 def fetch_departures():
     for file in os.listdir("XML-rozkladyjazdy"):
         tree = ET.parse(f"XML-rozkladyjazdy\{file}")
         root = tree.getroot()
+        signature = root[0].attrib['nazwa']
         for variant in root[0]:
-            variant_id = variant.attrib['id']
-            for stop in variant:
-                current_stop = find_stop_by_id(stop.attrib['id'])
-                try:
-                    for day in stop[1]:
-                        match day.attrib['nazwa']:
-                            case 'w dni robocze':
-                                timetable = 0
-                            case 'Sobota':
-                                timetable = 1
-                            case _:
-                                timetable = 2
-                        for hour in day:
-                            h = hour.attrib['h']
-                            for minute in hour:
-                                m = minute.attrib['m']
-                                low = False
-                                if len(minute.attrib) > 1:
-                                    low = minute.attrib['ozn'] == 'N'
-                                line = find_line_by_signature(root[0].attrib['nazwa'])
-                                d = Departure(line, line.variants[int(variant_id)], current_stop,
-                                              datetime.time(int(h) % 24, int(m) % 60), timetable, low)
-                                # TODO consider departures post-midnight
-                                current_stop.append_departure(d)
-                except IndexError:
-                    pass
+            variant_id = int(variant.attrib['id'])
+            stop = variant[0]
+            try:
+                for day in stop[1]:
+                    match day.attrib['nazwa']:
+                        case 'w dni robocze':
+                            timetable = 0
+                        case 'Sobota':
+                            timetable = 1
+                        case 'niedz./ pon. – czw./ pt.':
+                            timetable = 3
+                        case 'pt./ sob.':
+                            timetable = 4
+                        case 'sob./ niedz.':
+                            timetable = 5
+                        case _:
+                            timetable = 2
+                    for hour in day:
+                        h = int(hour.attrib['h'])
+                        for minute in hour:
+                            m = int(minute.attrib['m'])
+                            low = False
+                            if len(minute.attrib) > 1:
+                                low = minute.attrib['ozn'] == 'N'
+                            for e, departure in enumerate(find_line_by_signature(signature).variants[variant_id].items()):
+                                new_m = departure[1] + m
+                                current_stop = variant[e].attrib['id']
+                                cursor.execute(
+                                    "INSERT INTO departures (time_h, time_m, timetable, line, variant, stop, low)"
+                                    " VALUES (?,?,?,?,?,?,?)",
+                                    ((h + (new_m > 59)) % 24, new_m % 60, timetable,
+                                     signature, variant_id, current_stop, int(low)))
+
+            except IndexError:
+                pass
+
+
+def db_setup():
+    cursor.execute("DROP TABLE IF EXISTS departures")
+    cursor.execute("DROP TABLE IF EXISTS stops")
+    cursor.execute("DROP TABLE IF EXISTS lines")
+    db.commit()
+    cursor.execute("CREATE TABLE stops"
+                   "(code integer primary key, stop_name string, latitude string, longitude string)")
+    cursor.execute("CREATE TABLE lines(signature string primary key)")
+    cursor.execute("CREATE TABLE departures(time_h smallint, time_m smallint, timetable smallint,"
+                   " line string, variant smallint, stop integer, low smallint,"
+                   " foreign key(line) references lines(signature),"
+                   " foreign key(stop) references stops(code))")
+    db.commit()
 
 
 def fetch_all():
     # unpack_timetable()
+    db_setup()
     fetch_stops()
     fetch_lines()
     fetch_departures()
+    db.commit()
+    db.close()
