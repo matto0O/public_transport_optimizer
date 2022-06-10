@@ -1,5 +1,6 @@
 import math
 import sqlite3
+from gmaps import get_time_to_location
 
 db = sqlite3.connect("pto.db")
 cursor = db.cursor()
@@ -36,6 +37,10 @@ def stops_by_course(code, course):
     return cursor.fetchall()
 
 
+def get_location_by_stop_code(code):
+    return cursor.execute("SELECT latitude, longitude FROM stops WHERE code=?", (code,)).fetchall()[0]
+
+
 def get_direct(list_from, list_to):
     result = set()
     for dep in list_from:
@@ -43,6 +48,12 @@ def get_direct(list_from, list_to):
             if dep[3] == arr[3] and dep[5] == arr[5]:
                 result.add((dep, arr))
     return tuple(result)
+
+
+def trip_time(tup, origin, destination):
+    return (tup[1][0] - tup[0][0]) * 60 + tup[1][1] - tup[0][1] + \
+           get_time_to_location(origin, get_location_by_stop_code(tup[0][-2])) + \
+           get_time_to_location(get_location_by_stop_code(tup[1][-2]), destination)
 
 
 def find_connections(origin, destination, max_radius, h, m, timetable):
@@ -54,4 +65,5 @@ def find_connections(origin, destination, max_radius, h, m, timetable):
     for stop in filter(lambda x: math.sqrt(x[2]) * 111320 <= max_radius, sort_by_distance(destination)):
         for vehicle in arrivals_at_stop(stop[0], h, m, timetable):
             dep_to.append(vehicle)
-    print(get_direct(dep_from, dep_to))
+    holder = map(lambda elem: (elem, trip_time(elem, origin, destination)), (get_direct(dep_from, dep_to)))
+    return sorted(holder, key=(lambda x: x[1]))
