@@ -1,4 +1,4 @@
-1. Fetch bus/tram stop data (IDs, names, departure times)
+1. Fetch bus/tram stop data (IDs, names, departure times) - done
 2. Find the fastest direct connections based on timetable
 3. Add depth to searches (take transfers into account)
 4. Get APIs to work
