@@ -52,7 +52,7 @@ def fetch_stops():
     file = pd.read_csv("stops.txt", dtype=str)
     for elem in file.iterrows():
         cursor.execute("INSERT INTO stops (code, stop_name, latitude, longitude) VALUES (?,?,?,?)",
-                       (elem[1][1], elem[1][2], elem[1][3], elem[1][4]))
+                       (elem[1][1], elem[1][2], float(elem[1][3]), float(elem[1][4])))
 
 
 def fetch_lines():
@@ -66,7 +66,6 @@ def fetch_lines():
                 intervals[times.attrib['id']] = int(times.attrib['czas'])
             variants.append(intervals)
         lines.append(Line(root[0].attrib['nazwa'], variants))
-        cursor.execute("INSERT INTO lines (signature) VALUES (?)", (root[0].attrib['nazwa'],))
 
 
 def fetch_departures():
@@ -74,6 +73,7 @@ def fetch_departures():
         tree = ET.parse(f"XML-rozkladyjazdy\{file}")
         root = tree.getroot()
         signature = root[0].attrib['nazwa']
+        course_id = 0
         for variant in root[0]:
             variant_id = int(variant.attrib['id'])
             stop = variant[0]
@@ -99,14 +99,17 @@ def fetch_departures():
                             low = False
                             if len(minute.attrib) > 1:
                                 low = minute.attrib['ozn'] == 'N'
-                            for e, departure in enumerate(find_line_by_signature(signature).variants[variant_id].items()):
+                            course_id += 1
+                            for e, departure in enumerate(find_line_by_signature(signature).
+                                                                  variants[variant_id].items()):
                                 new_m = departure[1] + m
                                 current_stop = variant[e].attrib['id']
                                 cursor.execute(
-                                    "INSERT INTO departures (time_h, time_m, timetable, line, variant, stop, low)"
-                                    " VALUES (?,?,?,?,?,?,?)",
+                                    "INSERT INTO departures "
+                                    "(time_h, time_m, timetable, line, variant, course_id, stop, low)"
+                                    " VALUES (?,?,?,?,?,?,?,?)",
                                     ((h + (new_m > 59)) % 24, new_m % 60, timetable,
-                                     signature, variant_id, current_stop, int(low)))
+                                     signature, variant_id, course_id, current_stop, int(low)))
 
             except IndexError:
                 pass
@@ -115,14 +118,11 @@ def fetch_departures():
 def db_setup():
     cursor.execute("DROP TABLE IF EXISTS departures")
     cursor.execute("DROP TABLE IF EXISTS stops")
-    cursor.execute("DROP TABLE IF EXISTS lines")
     db.commit()
     cursor.execute("CREATE TABLE stops"
-                   "(code integer primary key, stop_name string, latitude string, longitude string)")
-    cursor.execute("CREATE TABLE lines(signature string primary key)")
+                   "(code integer primary key, stop_name string, latitude real, longitude real)")
     cursor.execute("CREATE TABLE departures(time_h smallint, time_m smallint, timetable smallint,"
-                   " line string, variant smallint, stop integer, low smallint,"
-                   " foreign key(line) references lines(signature),"
+                   " line string, variant smallint, course_id integer, stop integer, low smallint,"
                    " foreign key(stop) references stops(code))")
     db.commit()
 
