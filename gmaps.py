@@ -1,7 +1,7 @@
 import googlemaps
 
-api_key = 'AIzaSyD3flnJCqT7n5-NC1f_Qxyn8jdP0TNssc0'
-gmaps = googlemaps.Client(api_key)
+with open("gmaps_key", 'r') as file:
+    gmaps = googlemaps.Client(file.read())
 
 
 def get_location(place):
