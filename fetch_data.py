@@ -103,12 +103,13 @@ def fetch_departures():
                             for e, departure in enumerate(find_line_by_signature(signature).
                                                                   variants[variant_id].items()):
                                 new_m = departure[1] + m
+                                new_h = 24 if ((h + (new_m > 59)) % 24) == 0 else ((h + (new_m > 59)) % 24)
                                 current_stop = variant[e].attrib['id']
                                 cursor.execute(
                                     "INSERT INTO departures "
                                     "(time_h, time_m, timetable, line, variant, course_id, stop, low)"
                                     " VALUES (?,?,?,?,?,?,?,?)",
-                                    ((h + (new_m > 59)) % 24, new_m % 60, timetable,
+                                    (new_h, new_m % 60, timetable,
                                      signature, variant_id, course_id, current_stop, int(low)))
 
             except IndexError:
