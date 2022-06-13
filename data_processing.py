@@ -37,7 +37,7 @@ class Trip:
                f"Total time: {self.total_time}\n"
 
 
-def sort_by_distance(location):
+def sort_by_distance(location):     # returning stops table sorted by distance^2 to location
     cursor.execute("SELECT code, stop_name,"
                    " (([latitude]-?)*([latitude]-?)+([longitude]-?)*([longitude]-?)) AS dist FROM stops"
                    " ORDER BY ([latitude]-?)*([latitude]-?)+([longitude]-?)*([longitude]-?)",
@@ -46,42 +46,36 @@ def sort_by_distance(location):
     return cursor.fetchall()
 
 
-def departures_from_stop(code, h, m, timetable):
-    cursor.execute("SELECT * FROM "
+def departures_from_stop(code, h, m, timetable):    # returning a tuple of unique line departures at
+    cursor.execute("SELECT * FROM "                 # the time closest to the one declared in arguments
                    "(SELECT * FROM departures WHERE (stop=? AND timetable=? AND (time_h>? OR (time_h=? AND time_m>=?)))"
                    " ORDER BY time_h, time_m)"
                    " GROUP BY stop, line HAVING COUNT(*)>=1 ", (code, timetable, h, h, m))
     return cursor.fetchall()
 
 
-def arrivals_at_stop(code, h, m, timetable):
-    cursor.execute("SELECT * FROM departures WHERE (stop=? AND timetable=? AND (time_h>? OR (time_h=? AND time_m>=?)))"
-                   " ORDER BY time_h, time_m", (code, timetable, h, h, m))
-    return cursor.fetchall()
-
-
-def lines_at_stop(code):
+def lines_at_stop(code):        # returning unique line and variant combination from departures at a certain stop
     return tuple(cursor.execute("SELECT DISTINCT line, variant FROM departures WHERE stop=?", (code,)).fetchall())
 
 
-def stops_by_course(line: int, course: int):
+def stops_by_course(line: int, course: int):        # returning all departures during a certain ride
     return cursor.execute("SELECT * FROM departures WHERE (course_id=? AND line=?)", (course, line)).fetchall()
 
 
-def get_location_by_stop_code(code):
+def get_location_by_stop_code(code):            # returning stops location by its code
     return cursor.execute("SELECT latitude, longitude FROM stops WHERE code=?", (code,)).fetchall()[0]
 
 
 def get_direct(list_from, list_to):
-    result = set()
+    result = set()          # finding departures that share the same line code and course_ids
     for dep in list_from:
         for arr in list_to:
             if dep[3] == arr[3] and dep[5] == arr[5] and (dep[0] * 60 + dep[1] < arr[0] * 60 + arr[1]):
-                result.add((dep, arr))
+                result.add((dep, arr))                      # ^here making sure the route is not reversed
     return tuple(result)
 
 
-def remove_redundant_departures(dep_list, place):
+def remove_redundant_departures(dep_list, place):    # removing repeating line-variant combinations and returning a list
     result = list()
     unique_deps = set(map(lambda x: (x[3], x[4]), dep_list))
     for unique in unique_deps:
@@ -97,7 +91,7 @@ def remove_redundant_departures(dep_list, place):
     return result
 
 
-def trip_time(tup, origin, destination):
+def trip_time(tup, origin, destination):        # estimating total time of the trip
     return (tup[1][0] - tup[0][0]) * 60 + tup[1][1] - tup[0][1] + \
            gmaps.get_time_to_location(origin, get_location_by_stop_code(tup[0][-2])) + \
            gmaps.get_time_to_location(get_location_by_stop_code(tup[1][-2]), destination)
@@ -108,21 +102,30 @@ def find_connections(h, m, timetable, origin, destination, max_radius=2000):
     dep_to = list()
     origin_loc = gmaps.get_location(origin)
     dest_loc = gmaps.get_location(destination)
+
+    # finding possible departures
     for stop in filter(lambda x: math.sqrt(x[2]) * 111320 <= max_radius, sort_by_distance(origin_loc)):
         for vehicle in departures_from_stop(stop[0], h, m, timetable):
             dep_from.append(vehicle)
+
+    # finding possible end stops
     end_stops = tuple(map(lambda x: x[0],
                           filter(lambda x: math.sqrt(x[2]) * 111320 <= max_radius, sort_by_distance(dest_loc))))
+
+    # finding possible arrivals
     possible_lines = set()
     for es in end_stops:
         for line in lines_at_stop(es):
             possible_lines.add(line)
+
+    # removing (line, variant) repetitions and setting up possible connections
     dep_from = remove_redundant_departures(dep_from, origin_loc)
     dep_from = list(filter(lambda x: (x[3], x[4]) in possible_lines, dep_from))
     for dep in dep_from:
         dep_to.extend(filter(lambda x: x[-2] in end_stops, stops_by_course(dep[3], dep[5])))
     dep_to = remove_redundant_departures(dep_to, dest_loc)
 
+    # finding direct connections and returning them
     holder = filter(lambda x: x[1] > 0,
                     map(lambda elem: (elem, trip_time(elem, origin_loc, dest_loc)), (get_direct(dep_from, dep_to))))
     return tuple(map(lambda x: Trip(origin_loc, dest_loc, x[0][0], x[0][1], x[1]),
