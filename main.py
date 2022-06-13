@@ -4,5 +4,5 @@ from data_processing import find_connections
 
 if __name__ == '__main__':
     # fetch_data.fetch_all()
-    for i in find_connections(7, 0, 0, get_location("Wieczysta 155, Wrocław"), get_location("D-4 PWr"), 700):
+    for i in find_connections(7, 0, 0, "Wieczysta 155, Wrocław", "D-4 PWr", 700):
         print(i)
