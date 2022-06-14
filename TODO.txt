@@ -1,7 +1,0 @@
-1. Fetch bus/tram stop data (IDs, names, departure times) - done
-2. Find the fastest direct connections based on timetable - done
-3. Add depth to searches (take transfers into account)
-4. Get APIs to work - done
-5. Estimate the latency of the first of vehicles being part of a ride
-   (compare ETA from its current position with times in timetable)
-6. Apply Kivy
