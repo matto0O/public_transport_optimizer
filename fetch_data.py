@@ -1,8 +1,10 @@
+import time
+
 import pandas as pd
 from zipfile import ZipFile
 import os
 import shutil
-import xml.etree.ElementTree as ET
+from xml.etree.ElementTree import parse
 from dataclasses import dataclass
 import datetime
 import sqlite3
@@ -33,8 +35,34 @@ def find_line_by_signature(signature):
     return None
 
 
-def unpack_timetable():
-    target = "XML-rozkladyjazdy.zip"
+def download_timetables():
+    import requests as rq
+    txt_files_url = \
+        'https://www.wroclaw.pl/open-data/87b09b32-f076-4475-8ec9-6020ed1f9ac0/OtwartyWroclaw_rozklad_jazdy_GTFS.zip'
+    xml_files_url = 'https://www.wroclaw.pl/open-data/6db186a9-9b94-4ed4-8d63-f3fa6d38dc5f/XML-rozkladyjazdy.zip'
+    xml_filename = xml_files_url.split('/')[-1]
+    txt_filename = txt_files_url.split('/')[-1]
+    with open(xml_filename, 'wb') as xml_files:
+        xml_files.write(rq.get(xml_files_url).content)
+    with open(txt_filename, 'wb') as txt_files:
+        txt_files.write(rq.get(txt_files_url).content)
+    try:
+        shutil.rmtree(xml_filename[:-4])
+        os.remove("stops.txt")
+    except FileNotFoundError:
+            pass
+    unpack_timetable(xml_filename)
+    unpack_other(txt_filename)
+
+
+def unpack_other(target):
+    handle = ZipFile(target)
+    handle.extract("stops.txt")
+    handle.close()
+    os.remove(target)
+
+
+def unpack_timetable(target):
     handle = ZipFile(target)
     newname = target[:-4]
     handle.extractall(newname)
@@ -57,7 +85,7 @@ def fetch_stops():
 
 def fetch_lines():
     for file in os.listdir("XML-rozkladyjazdy"):
-        tree = ET.parse(f"XML-rozkladyjazdy\{file}")
+        tree = parse(f"XML-rozkladyjazdy\{file}")
         root = tree.getroot()
         variants = list()
         for child in root[0]:
@@ -70,7 +98,7 @@ def fetch_lines():
 
 def fetch_departures():
     for file in os.listdir("XML-rozkladyjazdy"):
-        tree = ET.parse(f"XML-rozkladyjazdy\{file}")
+        tree = parse(f"XML-rozkladyjazdy\{file}")
         root = tree.getroot()
         signature = root[0].attrib['nazwa']
         course_id = 0
@@ -96,7 +124,12 @@ def fetch_departures():
                         h = int(hour.attrib['h'])
                         for minute in hour:
                             m = int(minute.attrib['m'])
-                            low = False
+                            low = signature in ('A', 'C', 'D', 'K', 'N')
+                            try:
+                                if int(signature) >= 100:
+                                    low = True
+                            except ValueError:
+                                pass
                             if len(minute.attrib) > 1:
                                 low = minute.attrib['ozn'] == 'N'
                             course_id += 1
@@ -129,7 +162,7 @@ def db_setup():
 
 
 def fetch_all():
-    # unpack_timetable()
+    download_timetables()
     db_setup()
     fetch_stops()
     fetch_lines()
