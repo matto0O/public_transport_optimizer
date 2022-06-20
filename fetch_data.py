@@ -1,5 +1,4 @@
 import time
-
 import pandas as pd
 from zipfile import ZipFile
 import os
@@ -36,6 +35,7 @@ def find_line_by_signature(signature):
 
 
 def download_timetables():
+    save_status("Downloading the newest data...")
     import requests as rq
     txt_files_url = \
         'https://www.wroclaw.pl/open-data/87b09b32-f076-4475-8ec9-6020ed1f9ac0/OtwartyWroclaw_rozklad_jazdy_GTFS.zip'
@@ -50,7 +50,9 @@ def download_timetables():
         shutil.rmtree(xml_filename[:-4])
         os.remove("stops.txt")
     except FileNotFoundError:
-            pass
+        pass
+
+    save_status("Unpacking the data...")
     unpack_timetable(xml_filename)
     unpack_other(txt_filename)
 
@@ -77,6 +79,7 @@ def unpack_timetable(target):
 
 
 def fetch_stops():
+    save_status("Writing down all the stops...")
     file = pd.read_csv("stops.txt", dtype=str)
     for elem in file.iterrows():
         cursor.execute("INSERT INTO stops (code, stop_name, latitude, longitude) VALUES (?,?,?,?)",
@@ -84,6 +87,7 @@ def fetch_stops():
 
 
 def fetch_lines():
+    save_status("Browsing all the lines and their variants...")
     for file in os.listdir("XML-rozkladyjazdy"):
         tree = parse(f"XML-rozkladyjazdy\{file}")
         root = tree.getroot()
@@ -97,6 +101,7 @@ def fetch_lines():
 
 
 def fetch_departures():
+    save_status("Saving all the departures...")
     for file in os.listdir("XML-rozkladyjazdy"):
         tree = parse(f"XML-rozkladyjazdy\{file}")
         root = tree.getroot()
@@ -134,7 +139,7 @@ def fetch_departures():
                                 low = minute.attrib['ozn'] == 'N'
                             course_id += 1
                             for e, departure in enumerate(find_line_by_signature(signature).
-                                                                  variants[variant_id].items()):
+                                                          variants[variant_id].items()):
                                 new_m = departure[1] + m
                                 new_h = 24 if ((h + (new_m > 59)) % 24) == 0 else ((h + (new_m > 59)) % 24)
                                 current_stop = variant[e].attrib['id']
@@ -150,6 +155,7 @@ def fetch_departures():
 
 
 def db_setup():
+    save_status("Setting up the database...")
     cursor.execute("DROP TABLE IF EXISTS departures")
     cursor.execute("DROP TABLE IF EXISTS stops")
     db.commit()
@@ -161,6 +167,11 @@ def db_setup():
     db.commit()
 
 
+def save_status(message):
+    with open('status.txt', 'w') as status:
+        status.write(message)
+
+
 def fetch_all():
     download_timetables()
     db_setup()
@@ -169,3 +180,4 @@ def fetch_all():
     fetch_departures()
     db.commit()
     db.close()
+    save_status("Successfully gathered all the data!")
