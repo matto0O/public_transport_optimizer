@@ -1,6 +1,6 @@
 import googlemaps
 
-with open("gmaps_key", 'r') as file:
+with open("model/gmaps_key", 'r') as file:
     gmaps = googlemaps.Client(file.read())
 
 

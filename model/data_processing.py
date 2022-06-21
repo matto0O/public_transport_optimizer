@@ -1,6 +1,6 @@
 import math
 import sqlite3
-import gmaps
+import model.gmaps as gmaps
 from datetime import time
 
 db = sqlite3.connect("pto.db")
