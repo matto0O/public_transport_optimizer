@@ -11,7 +11,8 @@ from kivy.graphics import Color, Rectangle
 from kivy.uix.popup import Popup
 from kivy.clock import mainthread
 from fetch_data import fetch_all
-from multiprocessing import Process
+from kivy.uix.relativelayout import RelativeLayout
+from kivy.uix.spinner import Spinner
 
 
 class MyLabel(Label):
@@ -122,9 +123,9 @@ class DownloadProgress(AnchorLayout):
         self.add_widget(self.status)
 
     def on_click(self, instance):
+        from threading import Thread
         self.rearrange()
-        process = Process(target=self.set_text)
-        process.run()
+        Thread(target=self.set_text).start()
         fetch_all()
 
     def __init__(self, **kwargs):
@@ -138,7 +139,7 @@ class DownloadProgress(AnchorLayout):
 
 
 class Results(StackLayout):
-    def get_results(self, origin, destination):
+    def get_results(self, origin, destination, h, m, timetable):
         from data_processing import find_connections
         try:
             with open("settings.txt", 'r') as settings:
@@ -148,17 +149,17 @@ class Results(StackLayout):
                 self.max_radius_txt = settings.readline().split('=')[1].strip('\n')
         except FileNotFoundError:
             pass
-        return find_connections(7, 0, 1, origin, destination, int(self.max_radius_txt),
+        return find_connections(h, m, timetable, origin, destination, int(self.max_radius_txt),
                                 self.low_floor_vehicles, self.avoid_buses, self.avoid_trams)
 
-    def __init__(self, origin, destination, **kwargs):
+    def __init__(self, origin, destination, h, m, timetable, **kwargs):
         super(Results, self).__init__(**kwargs)
         self.max_radius_txt = 2000
         self.low_floor_vehicles = False
         self.avoid_buses = False
         self.avoid_trams = False
         self.orientation = 'tb-lr'
-        results = self.get_results(origin, destination)
+        results = self.get_results(origin, destination, h, m, timetable)
         amount_of_labels = len(results)
         if amount_of_labels == 0:
             self.add_widget(Label(text="No connections to show", size_hint=(1, 1)))
@@ -183,10 +184,13 @@ def show_settings_popup(instance):
     popup.open()
 
 
-def show_results_popup(instance, origin, destination):
-    panel = Results(origin, destination)
-    popup = Popup(title="Connections", content=panel, size_hint=(0.8, 0.8))
-    popup.open()
+def show_results_popup(instance, origin, destination, h, m, timetable):
+    try:
+        panel = Results(origin, destination, int(h), int(m), timetable)
+        popup = Popup(title="Connections", content=panel, size_hint=(0.8, 0.8))
+        popup.open()
+    except ValueError:
+        pass
 
 
 class Container(FloatLayout):
@@ -214,21 +218,53 @@ class Container(FloatLayout):
         self.destination_txt = TextInput(hint_text='Destination', size_hint=(0.4, 0.2))
         anchor_dst.add_widget(self.destination_txt)
 
+        anchor_params = AnchorLayout(anchor_x='center', anchor_y='center')
+        layout_h = RelativeLayout()
+        self.hour_text = TextInput(hint_text="hour", size_hint=(0.15, 0.1), pos_hint={'center_x': 0.5, 'center_y': 0.6})
+        layout_h.add_widget(self.hour_text)
+        layout_m = RelativeLayout()
+        self.minute_text = TextInput(hint_text="minute", size_hint=(0.15, 0.1),
+                                     pos_hint={'center_x': 0.5, 'center_y': 0.5})
+        layout_m.add_widget(self.minute_text)
+        layout_timetable = RelativeLayout()
+        self.timetable_spinner = Spinner(text="Timetable", size_hint=(0.15, 0.1),
+                                         pos_hint={'center_x': 0.5, 'center_y': 0.4},
+                                         values=["workdays", "saturdays", "sundays and holidays",
+                                                 "nights sun/mon - thu/fri", "nights fri/sat", "nights sat/sun"])
+        layout_timetable.add_widget(self.timetable_spinner)
+        anchor_params.add_widget(layout_m)
+        anchor_params.add_widget(layout_h)
+        anchor_params.add_widget(layout_timetable)
+
         def on_search_click(instance):
-            show_results_popup(instance, self.origin_txt.text, self.destination_txt.text)
+            match self.timetable_spinner.text:
+                case 'workdays':
+                    timetable = 0
+                case 'saturdays':
+                    timetable = 1
+                case 'nights sun/mon - thu/fri':
+                    timetable = 3
+                case 'nights fri/sat':
+                    timetable = 4
+                case 'nights sat/sun':
+                    timetable = 5
+                case _:
+                    timetable = 2
+            show_results_popup(instance, self.origin_txt.text, self.destination_txt.text,
+                               self.hour_text.text, self.minute_text.text, timetable)
 
         anchor_search = AnchorLayout(anchor_x='center', anchor_y='bottom')
-        search_btn = Button(text='Search', size_hint=(0.4, 0.2), on_press=on_search_click)
+        search_btn = Button(text='Search', size_hint=(0.4, 0.2), on_release=on_search_click)
         anchor_search.add_widget(search_btn)
 
         anchor_redownload = AnchorLayout(anchor_x='right', anchor_y='top')
         redownload_btn = Button(size_hint=(0.13, 0.13), background_normal='gui_files/redownload.png',
-                                background_down='gui_files/redownload_pressed.png', on_press=show_download_popup)
+                                background_down='gui_files/redownload_pressed.png', on_release=show_download_popup)
         anchor_redownload.add_widget(redownload_btn)
 
         anchor_settings = AnchorLayout(anchor_x='left', anchor_y='top')
         settings_btn = Button(size_hint=(0.13, 0.13), background_normal='gui_files/settings.png',
-                              background_down='gui_files/settings_pressed.png', on_press=show_settings_popup)
+                              background_down='gui_files/settings_pressed.png', on_release=show_settings_popup)
         anchor_settings.add_widget(settings_btn)
 
         self.add_widget(anchor_label)
@@ -237,6 +273,7 @@ class Container(FloatLayout):
         self.add_widget(anchor_search)
         self.add_widget(anchor_settings)
         self.add_widget(anchor_redownload)
+        self.add_widget(anchor_params)
 
 
 def init_settings():
