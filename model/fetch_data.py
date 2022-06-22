@@ -1,4 +1,3 @@
-import time
 import pandas as pd
 from zipfile import ZipFile
 import os
@@ -168,7 +167,7 @@ def db_setup():
 
 
 def save_status(message):
-    with open('status.txt', 'w') as status:
+    with open('model/status.txt', 'w') as status:
         status.write(message)
 
 

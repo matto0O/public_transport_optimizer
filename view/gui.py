@@ -11,7 +11,6 @@ from kivy.graphics import Color, Rectangle
 from functools import partial
 
 from controller import controller
-from model.fetch_data import fetch_all
 from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.spinner import Spinner
 
@@ -62,39 +61,16 @@ class Settings(AnchorLayout):
         controller.load_settings(self)
 
 
-class DownloadProgress(AnchorLayout):
-    # @mainthread
-    # def set_text(self):
-    #     while self.status.text is not "Successfully gathered all the data!":
-    #         try:
-    #             with open("model/status.txt", 'r') as status_file:
-    #                 new = status_file.readline()
-    #                 if self.status.text != new:
-    #                     print(f"update: {new}")
-    #         except FileNotFoundError:
-    #             pass
-
-    def rearrange(self):
-        entry_text = "Fetching the newest data..."
-        self.status = Label(text=entry_text, size_hint=(0.8, 0.5))
-        with open("model/status.txt", 'w') as status_file:
-            status_file.write(entry_text)
-        self.remove_widget(self.btn)
-        self.add_widget(self.status)
-
+class DownloadProgress(StackLayout):
     def on_click(self, instance):
-        from threading import Thread
-        self.rearrange()
-        #Thread(target=self.set_text).start()
-        fetch_all()
+        controller.update(self)
 
     def __init__(self, **kwargs):
         super(DownloadProgress, self).__init__(**kwargs)
-        self.status = None
-        self.anchor_x = 'center'
-        self.anchor_y = 'center'
-
-        self.btn = Button(text="Download data", size_hint=(0.8, 0.5), on_press=self.on_click)
+        self.orientation = 'tb-lr'
+        self.status = Label(text="Downloading may take a while...", size_hint=(1, 0.5))
+        self.btn = Button(text="Download data", size_hint=(1, 0.5), on_release=self.on_click)
+        self.add_widget(self.status)
         self.add_widget(self.btn)
 
 
@@ -129,23 +105,23 @@ class Container(FloatLayout):
         anchor_label.add_widget(label)
 
         anchor_origin = AnchorLayout(anchor_x='left', anchor_y='center')
-        self.origin_txt = TextInput(hint_text='Origin', size_hint=(0.4, 0.2))
+        self.origin_txt = TextInput(hint_text='Origin', size_hint=(0.35, 0.2))
         anchor_origin.add_widget(self.origin_txt)
 
         anchor_dst = AnchorLayout(anchor_x='right', anchor_y='center')
-        self.destination_txt = TextInput(hint_text='Destination', size_hint=(0.4, 0.2))
+        self.destination_txt = TextInput(hint_text='Destination', size_hint=(0.35, 0.2))
         anchor_dst.add_widget(self.destination_txt)
 
         anchor_params = AnchorLayout(anchor_x='center', anchor_y='center')
         layout_h = RelativeLayout()
-        self.hour_text = TextInput(hint_text="hour", size_hint=(0.15, 0.1), pos_hint={'center_x': 0.5, 'center_y': 0.6})
+        self.hour_text = TextInput(hint_text="hour", size_hint=(0.2, 0.1), pos_hint={'center_x': 0.5, 'center_y': 0.6})
         layout_h.add_widget(self.hour_text)
         layout_m = RelativeLayout()
-        self.minute_text = TextInput(hint_text="minute", size_hint=(0.15, 0.1),
+        self.minute_text = TextInput(hint_text="minute", size_hint=(0.2, 0.1),
                                      pos_hint={'center_x': 0.5, 'center_y': 0.5})
         layout_m.add_widget(self.minute_text)
         layout_timetable = RelativeLayout()
-        self.timetable_spinner = Spinner(text="Timetable", size_hint=(0.15, 0.1),
+        self.timetable_spinner = Spinner(text="Timetable", size_hint=(0.2, 0.1),
                                          pos_hint={'center_x': 0.5, 'center_y': 0.4},
                                          values=["workdays", "saturdays", "sundays and holidays",
                                                  "nights sun/mon - thu/fri", "nights fri/sat", "nights sat/sun"])
@@ -186,4 +162,7 @@ class PublicTransportOptimizer(App):
 
 
 if __name__ == '__main__':
+    from kivy.core.window import Window
+    Window.size = (1269, 806)
     PublicTransportOptimizer().run()
+

@@ -71,3 +71,15 @@ def check_at(instance):
 
 def check_ab(instance):
     md.avoid_trams(instance)
+
+
+def update(layout):
+    from threading import Thread
+    md.set_starting_view_on_download(layout)
+    t = Thread(target=md.get_new_data)
+    t.start()
+    while layout.status.text != "Successfully gathered all the data!":
+        print(layout.status.text)
+        md.update_download_view(layout)
+    layout.remove_widget(layout.btn)
+    layout.status.size_hint = (1, 1)

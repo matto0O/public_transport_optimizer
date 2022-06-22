@@ -1,6 +1,7 @@
 from kivy.uix.popup import Popup
 
 from view.gui import DownloadProgress, Settings, Results
+from kivy.uix.label import Label
 
 
 def avoid_buses(instance):
@@ -69,6 +70,26 @@ def show_results_popup(origin, destination, h, m, timetable):
         popup = Popup(title="Connections", content=panel, size_hint=(0.8, 0.8))
         popup.open()
     except ValueError:
+        pass
+
+
+def get_new_data():
+    from model.fetch_data import fetch_all
+    fetch_all()
+
+
+def set_starting_view_on_download(layout):
+    entry_text = "Fetching the newest data..."
+    layout.status.text = entry_text
+    with open("model/status.txt", 'w') as status_file:
+        status_file.write(entry_text)
+
+
+def update_download_view(layout):
+    try:
+        with open("model/status.txt", 'r') as status_file:
+            layout.status.text = status_file.readline()
+    except FileNotFoundError:
         pass
 
 
