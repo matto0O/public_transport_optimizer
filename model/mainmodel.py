@@ -1,7 +1,6 @@
 from kivy.uix.popup import Popup
 
 from view.gui import DownloadProgress, Settings, Results
-from kivy.uix.label import Label
 
 
 def avoid_buses(instance):
@@ -66,6 +65,8 @@ def show_settings_popup(instance):
 
 def show_results_popup(origin, destination, h, m, timetable):
     try:
+        if origin == "" or destination == "" or timetable == 20:
+            raise ValueError
         panel = Results(origin, destination, int(h), int(m), timetable)
         popup = Popup(title="Connections", content=panel, size_hint=(0.8, 0.8))
         popup.open()

@@ -43,6 +43,8 @@ def on_search_click(layout, instance):
             timetable = 4
         case 'nights sat/sun':
             timetable = 5
+        case 'Timetable':
+            timetable = 20
         case _:
             timetable = 2
     md.show_results_popup(layout.origin_txt.text, layout.destination_txt.text,
