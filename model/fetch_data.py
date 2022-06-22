@@ -2,7 +2,7 @@ import pandas as pd
 from zipfile import ZipFile
 import os
 import shutil
-import xml.etree.ElementTree as ET
+from xml.etree.ElementTree import parse
 from dataclasses import dataclass
 import datetime
 import sqlite3
@@ -33,8 +33,37 @@ def find_line_by_signature(signature):
     return None
 
 
-def unpack_timetable():
-    target = "XML-rozkladyjazdy.zip"
+def download_timetables():
+    save_status("Downloading the newest data...")
+    import requests as rq
+    txt_files_url = \
+        'https://www.wroclaw.pl/open-data/87b09b32-f076-4475-8ec9-6020ed1f9ac0/OtwartyWroclaw_rozklad_jazdy_GTFS.zip'
+    xml_files_url = 'https://www.wroclaw.pl/open-data/6db186a9-9b94-4ed4-8d63-f3fa6d38dc5f/XML-rozkladyjazdy.zip'
+    xml_filename = xml_files_url.split('/')[-1]
+    txt_filename = txt_files_url.split('/')[-1]
+    with open(xml_filename, 'wb') as xml_files:
+        xml_files.write(rq.get(xml_files_url).content)
+    with open(txt_filename, 'wb') as txt_files:
+        txt_files.write(rq.get(txt_files_url).content)
+    try:
+        shutil.rmtree(xml_filename[:-4])
+        os.remove("stops.txt")
+    except FileNotFoundError:
+        pass
+
+    save_status("Unpacking the data...")
+    unpack_timetable(xml_filename)
+    unpack_other(txt_filename)
+
+
+def unpack_other(target):
+    handle = ZipFile(target)
+    handle.extract("stops.txt")
+    handle.close()
+    os.remove(target)
+
+
+def unpack_timetable(target):
     handle = ZipFile(target)
     newname = target[:-4]
     handle.extractall(newname)
@@ -49,6 +78,7 @@ def unpack_timetable():
 
 
 def fetch_stops():
+    save_status("Writing down all the stops...")
     file = pd.read_csv("stops.txt", dtype=str)
     for elem in file.iterrows():
         cursor.execute("INSERT INTO stops (code, stop_name, latitude, longitude) VALUES (?,?,?,?)",
@@ -56,8 +86,9 @@ def fetch_stops():
 
 
 def fetch_lines():
+    save_status("Browsing all the lines and their variants...")
     for file in os.listdir("XML-rozkladyjazdy"):
-        tree = ET.parse(f"XML-rozkladyjazdy\{file}")
+        tree = parse(f"XML-rozkladyjazdy\{file}")
         root = tree.getroot()
         variants = list()
         for child in root[0]:
@@ -69,8 +100,9 @@ def fetch_lines():
 
 
 def fetch_departures():
+    save_status("Saving all the departures...")
     for file in os.listdir("XML-rozkladyjazdy"):
-        tree = ET.parse(f"XML-rozkladyjazdy\{file}")
+        tree = parse(f"XML-rozkladyjazdy\{file}")
         root = tree.getroot()
         signature = root[0].attrib['nazwa']
         course_id = 0
@@ -96,12 +128,17 @@ def fetch_departures():
                         h = int(hour.attrib['h'])
                         for minute in hour:
                             m = int(minute.attrib['m'])
-                            low = False
+                            low = signature in ('A', 'C', 'D', 'K', 'N')
+                            try:
+                                if int(signature) >= 100:
+                                    low = True
+                            except ValueError:
+                                pass
                             if len(minute.attrib) > 1:
                                 low = minute.attrib['ozn'] == 'N'
                             course_id += 1
                             for e, departure in enumerate(find_line_by_signature(signature).
-                                                                  variants[variant_id].items()):
+                                                          variants[variant_id].items()):
                                 new_m = departure[1] + m
                                 new_h = 24 if ((h + (new_m > 59)) % 24) == 0 else ((h + (new_m > 59)) % 24)
                                 current_stop = variant[e].attrib['id']
@@ -117,6 +154,7 @@ def fetch_departures():
 
 
 def db_setup():
+    save_status("Setting up the database...")
     cursor.execute("DROP TABLE IF EXISTS departures")
     cursor.execute("DROP TABLE IF EXISTS stops")
     db.commit()
@@ -128,11 +166,17 @@ def db_setup():
     db.commit()
 
 
+def save_status(message):
+    with open('model/status.txt', 'w') as status:
+        status.write(message)
+
+
 def fetch_all():
-    # unpack_timetable()
+    download_timetables()
     db_setup()
     fetch_stops()
     fetch_lines()
     fetch_departures()
     db.commit()
     db.close()
+    save_status("Successfully gathered all the data!")
